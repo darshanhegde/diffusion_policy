@@ -80,6 +80,7 @@ class LetoLowdimPolicy(BaseLowdimPolicy):
         }
         input_batch = self.model.process_batch_for_training(
             robomimic_batch)
+        
         info = self.model.train_on_batch(
             batch=input_batch, epoch=epoch, validate=validate)
         # keys: losses, predictions

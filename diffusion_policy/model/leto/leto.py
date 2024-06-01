@@ -109,10 +109,8 @@ class RNNActorNetwork(RNN_MIMO_MLP):
         )
 
         # TODO: Move these parameters to config
-        self.n_pred = 10
-        self.L = Parameter(torch.tril(torch.rand(self.ac_dim*self.n_pred, self.ac_dim*self.n_pred).to("cuda")))
+        self.L = Parameter(torch.tril(torch.rand(self.ac_dim, self.ac_dim).to("cuda")))
         self.eps = 1e-4
-        self.output_dim = self.ac_dim*self.n_pred
 
     def _get_output_shapes(self):
         """
@@ -162,16 +160,15 @@ class RNNActorNetwork(RNN_MIMO_MLP):
             state = None
 
         batch_size, num_steps, obs_size = obs_dict["obs"].shape
-        output_dim = num_steps * self.ac_dim
         # Add differentiable trajectory optimization layer
         L = self.L
-        Q = L.mm(L.t()) + self.eps*(torch.eye(output_dim,requires_grad = False)).to("cuda")
+        Q = L.mm(L.t()) + self.eps*(torch.eye(self.ac_dim,requires_grad = False)).to("cuda")
 
-        G = torch.eye(output_dim, dtype=torch.double).to("cuda")
-        h = torch.ones(output_dim, dtype=torch.double).to("cuda")
+        G = torch.eye(self.ac_dim, dtype=torch.double).to("cuda")
+        h = torch.ones(self.ac_dim, dtype=torch.double).to("cuda") * 10
         e_eq = Variable(torch.Tensor()).to("cuda")
 
-        x_prev = actions["action"].reshape((batch_size, num_steps * self.ac_dim)).double()
+        x_prev = actions["action"].reshape((batch_size * num_steps, self.ac_dim)).double()
         x = QPFunction(verbose=-1)(Q.double(), x_prev, G, h, e_eq, e_eq)
         x = x.float()
         actions["actions"] = x.view(batch_size, num_steps, self.ac_dim)
