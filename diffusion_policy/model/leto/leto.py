@@ -108,8 +108,9 @@ class RNNActorNetwork(RNN_MIMO_MLP):
             encoder_kwargs=encoder_kwargs,
         )
 
+        self.pred_steps = 16
         # TODO: Move these parameters to config
-        self.L = Parameter(torch.tril(torch.rand(self.ac_dim, self.ac_dim).to("cuda")))
+        self.L = Parameter(torch.tril(torch.rand(self.ac_dim * self.pred_steps, self.ac_dim * self.pred_steps).to("cuda")))
         self.eps = 1e-4
 
     def _get_output_shapes(self):
@@ -159,22 +160,26 @@ class RNNActorNetwork(RNN_MIMO_MLP):
             actions = outputs
             state = None
 
-        batch_size, num_steps, obs_size = obs_dict["obs"].shape
-        # Add differentiable trajectory optimization layer
-        L = self.L
-        Q = L.mm(L.t()) + self.eps*(torch.eye(self.ac_dim,requires_grad = False)).to("cuda")
-
-        G = torch.eye(self.ac_dim, dtype=torch.double).to("cuda")
-        h = torch.ones(self.ac_dim, dtype=torch.double).to("cuda") * 10
-        e_eq = Variable(torch.Tensor()).to("cuda")
-
-        x_prev = actions["action"].reshape((batch_size * num_steps, self.ac_dim)).double()
-        x = QPFunction(verbose=-1)(Q.double(), x_prev, G, h, e_eq, e_eq)
-        x = x.float()
-        actions["actions"] = x.view(batch_size, num_steps, self.ac_dim)
-        
         # apply tanh squashing to ensure actions are in [-1, 1]
         actions = torch.tanh(actions["action"])
+
+        # Add differentiable trajectory optimization layer
+        batch_size, num_steps, _ = obs_dict["obs"].shape
+        output_dims = self.ac_dim * self.pred_steps
+        L = self.L
+        Q = L.mm(L.t()) + self.eps*(torch.eye(output_dims, requires_grad = False)).to("cuda")
+
+        # dummy inequality constraint for making the QPFunction run. 
+        G = torch.ones(2 * output_dims, output_dims, dtype=torch.double, requires_grad=False).to("cuda")
+        G[output_dims:, :] *= -1
+        h = torch.ones(2 * output_dims, dtype=torch.double, requires_grad=False).to("cuda") 
+        e_ineq = Variable(torch.Tensor()).to("cuda")
+        e_eq = Variable(torch.Tensor()).to("cuda")
+
+        x_prev = actions.reshape((batch_size, output_dims)).double()
+        x = QPFunction(verbose=-1)(Q.double(), x_prev, G, h, e_eq, e_eq)
+        x = x.float()
+        actions = x.view(batch_size, num_steps, self.ac_dim)
 
         if return_state:
             return actions, state
@@ -196,8 +201,10 @@ class RNNActorNetwork(RNN_MIMO_MLP):
             state: updated rnn state
         """
         obs_dict = TensorUtils.to_sequence(obs_dict)
+        # obs_dict["obs"] = obs_dict["obs"].repeat((1, 16, 1)) 
         action, state = self.forward(
             obs_dict, goal_dict, rnn_init_state=rnn_state, return_state=True)
+        
         return action[:, 0], state
 
     def _to_string(self):

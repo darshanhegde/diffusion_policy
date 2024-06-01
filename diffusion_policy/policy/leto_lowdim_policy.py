@@ -30,6 +30,7 @@ class LetoLowdimPolicy(BaseLowdimPolicy):
             dataset_type=dataset_type)
         with config.unlocked():
             config.observation.modalities.obs.low_dim = [obs_key]
+            config.algo.rnn.open_loop = True
         
         ObsUtils.initialize_obs_utils_with_config(config)
         model = BC_RNN(
@@ -56,7 +57,7 @@ class LetoLowdimPolicy(BaseLowdimPolicy):
     def predict_action(self, obs_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         obs = self.normalizer['obs'].normalize(obs_dict['obs'])
         assert obs.shape[1] == 1
-        robomimic_obs_dict = {self.obs_key: obs[:,0,:]}
+        robomimic_obs_dict = {self.obs_key: obs[:, 0, :]}
         naction = self.model.get_action(robomimic_obs_dict)
         action = self.normalizer['action'].unnormalize(naction)
         # (B, Da)
