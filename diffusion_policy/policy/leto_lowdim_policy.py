@@ -1,6 +1,7 @@
 from typing import Dict
 import torch
 from diffusion_policy.model.common.normalizer import LinearNormalizer
+from diffusion_policy.model.leto.leto import BC_RNN
 from diffusion_policy.policy.base_lowdim_policy import BaseLowdimPolicy
 
 from robomimic.algo import algo_factory
@@ -8,7 +9,7 @@ from robomimic.algo.algo import PolicyAlgo
 import robomimic.utils.obs_utils as ObsUtils
 from diffusion_policy.common.robomimic_config_util import get_robomimic_config
 
-class RobomimicLowdimPolicy(BaseLowdimPolicy):
+class LetoLowdimPolicy(BaseLowdimPolicy):
     def __init__(self, 
             action_dim, 
             obs_dim,
@@ -32,9 +33,10 @@ class RobomimicLowdimPolicy(BaseLowdimPolicy):
             config.algo.rnn.open_loop = True
         
         ObsUtils.initialize_obs_utils_with_config(config)
-        model: PolicyAlgo = algo_factory(
-                algo_name=config.algo_name,
-                config=config,
+        model = BC_RNN(
+                algo_config=config.algo,
+                obs_config=config.observation,
+                global_config=config,
                 obs_key_shapes={obs_key: [obs_dim]},
                 ac_dim=action_dim,
                 device='cpu',
@@ -55,7 +57,7 @@ class RobomimicLowdimPolicy(BaseLowdimPolicy):
     def predict_action(self, obs_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         obs = self.normalizer['obs'].normalize(obs_dict['obs'])
         assert obs.shape[1] == 1
-        robomimic_obs_dict = {self.obs_key: obs[:, 0,:]}
+        robomimic_obs_dict = {self.obs_key: obs[:, 0, :]}
         naction = self.model.get_action(robomimic_obs_dict)
         action = self.normalizer['action'].unnormalize(naction)
         # (B, Da)
@@ -79,6 +81,7 @@ class RobomimicLowdimPolicy(BaseLowdimPolicy):
         }
         input_batch = self.model.process_batch_for_training(
             robomimic_batch)
+        
         info = self.model.train_on_batch(
             batch=input_batch, epoch=epoch, validate=validate)
         # keys: losses, predictions

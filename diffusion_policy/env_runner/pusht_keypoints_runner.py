@@ -164,6 +164,7 @@ class PushTKeypointsRunner(BaseLowdimRunner):
 
         # plan for rollout
         n_envs = len(self.env_fns)
+
         n_inits = len(self.env_init_fn_dills)
         n_chunks = math.ceil(n_inits / n_envs)
 
