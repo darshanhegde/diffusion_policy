@@ -143,6 +143,27 @@ class DrawOptions(pymunk.SpaceDebugDrawOptions):
         p2 = to_pygame(circle_edge, self.surface)
         line_r = 2 if radius > 20 else 1
         # pygame.draw.lines(self.surface, outline_color.as_int(), False, [p, p2], line_r)
+    
+    def draw_half_plane(self, A: float, b: float, color: SpaceDebugColor, shade_above = False) -> None:
+        width, height = self.surface.get_size()
+
+        # Calculate intersection points with the window boundaries
+        p1 = (0, b)
+        p2 = (width, A * width + b)
+
+        # Convert to Pygame coordinates
+        p1 = to_pygame(p1, self.surface)
+        p2 = to_pygame(p2, self.surface)
+
+        # Draw the line representing the boundary of the half-plane
+        pygame.draw.aalines(self.surface, tuple(color), False, [p1, p2])
+
+        if shade_above:
+            points = [(0, 0), (width, 0), p2, p1]
+        else:
+            points = [(0, height), (width, height), p2, p1]
+
+        pygame.draw.polygon(self.surface, tuple(color), points)
 
     def draw_segment(self, a: Vec2d, b: Vec2d, color: SpaceDebugColor) -> None:
         p1 = to_pygame(a, self.surface)
