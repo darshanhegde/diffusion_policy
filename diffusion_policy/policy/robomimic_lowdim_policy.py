@@ -54,13 +54,13 @@ class RobomimicLowdimPolicy(BaseLowdimPolicy):
     # =========== inference =============
     def predict_action(self, obs_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         obs = self.normalizer['obs'].normalize(obs_dict['obs'])
-        assert obs.shape[1] == 1
-        robomimic_obs_dict = {self.obs_key: obs[:, 0,:]}
+        num_steps = 1
+        robomimic_obs_dict = {self.obs_key: obs.repeat((1, num_steps, 1))}
         naction = self.model.get_action(robomimic_obs_dict)
         action = self.normalizer['action'].unnormalize(naction)
         # (B, Da)
         result = {
-            'action': action[:,None,:] # (B, 1, Da)
+            'action': action # (B, 1, Da)
         }
         return result
     

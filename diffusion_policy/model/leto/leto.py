@@ -22,6 +22,36 @@ from torch.autograd import Variable
 from torch.nn.parameter import Parameter
 
 
+class QPLayer(nn.Module):
+
+    def __init__(self, ac_dim) -> None:
+        super().__init__()
+        self.ac_dim = ac_dim 
+        self.L = Parameter(torch.tril(torch.rand(self.ac_dim, self.ac_dim)).to("cuda"))
+        self.eps = 1e-4
+
+    def forward(self, actions):
+        batch_size, num_steps, _ = actions.shape
+        output_dims = self.ac_dim * num_steps
+        Q = torch.zeros((output_dims, output_dims)).to("cuda")
+        for i in range(num_steps):
+            Q[i*self.ac_dim:(i+1)*self.ac_dim, i*self.ac_dim:(i+1)*self.ac_dim] = self.L.mm(self.L.t()) + self.eps*(torch.eye(self.ac_dim, requires_grad = False)).to("cuda") 
+
+        G = torch.zeros(2 * output_dims, output_dims, dtype=torch.double, requires_grad=False).to("cuda")
+        G[:output_dims, :] = torch.eye(output_dims, dtype=torch.double, requires_grad=False).to("cuda")
+        G[output_dims:, :] = -torch.eye(output_dims, dtype=torch.double, requires_grad=False).to("cuda")
+        h = torch.ones(2 * output_dims, dtype=torch.double, requires_grad=False).to("cuda")
+        e_eq = Variable(torch.Tensor()).to("cuda")
+        x_prev = actions.reshape((batch_size, output_dims)).double()
+        x = QPFunction(verbose=-1)(Q.double(), x_prev, G, h, e_eq, e_eq)
+        torch._assert(torch.all(G.mm(x.t()).t() <= h), "Constraint not satisfied")
+
+        actions = x.view(batch_size, num_steps, self.ac_dim)
+        actions = actions.float()
+
+        return actions
+
+
 class RNNActorNetwork(RNN_MIMO_MLP):
     """
     An RNN policy network that predicts actions from observations.
@@ -109,10 +139,8 @@ class RNNActorNetwork(RNN_MIMO_MLP):
         )
 
         self.pred_steps = 16
-        # TODO: Move these parameters to config
-        self.L = Parameter(torch.tril(torch.rand(self.ac_dim, self.ac_dim)))
-        self.L.to("cuda")
-        self.eps = 1e-4
+        self.qp_layer_1 = QPLayer(self.ac_dim)
+        self.qp_layer_2 = QPLayer(self.ac_dim)
 
     def _get_output_shapes(self):
         """
@@ -165,24 +193,8 @@ class RNNActorNetwork(RNN_MIMO_MLP):
         actions = torch.tanh(actions["action"])
 
         # Add differentiable trajectory optimization layer
-        batch_size, num_steps, _ = obs_dict["obs"].shape
-        output_dims = self.ac_dim * num_steps
-        Q = torch.zeros((output_dims, output_dims)).to("cuda")
-        for i in range(num_steps):
-            Q[i*self.ac_dim:(i+1)*self.ac_dim, i*self.ac_dim:(i+1)*self.ac_dim] = self.L.mm(self.L.t()) + self.eps*(torch.eye(self.ac_dim, requires_grad = False)).to("cuda") 
-
-        # dummy inequality constraint for making the QPFunction run. 
-        G = torch.ones(2, output_dims, dtype=torch.double, requires_grad=False).to("cuda")
-        G[1, :] *= -1
-        h = torch.ones(2, dtype=torch.double, requires_grad=False).to("cuda") * output_dims * 5
-        e_eq = Variable(torch.Tensor()).to("cuda")
-
-        x_prev = actions.reshape((batch_size, output_dims)).double()
-        x = QPFunction(verbose=-1)(Q.double(), x_prev, G, h, e_eq, e_eq)
-        x = x.float()
-        actions = x.view(batch_size, num_steps, self.ac_dim)
-
-        actions = torch.tanh(actions)
+        actions = self.qp_layer_1(actions)
+        actions = self.qp_layer_2(actions)
 
         if return_state:
             return actions, state
@@ -203,17 +215,16 @@ class RNNActorNetwork(RNN_MIMO_MLP):
             actions (torch.Tensor): batch of actions - does not contain time dimension
             state: updated rnn state
         """
-        obs_dict = TensorUtils.to_sequence(obs_dict)
+        # obs_dict = TensorUtils.to_sequence(obs_dict)
         # obs_dict["obs"] = obs_dict["obs"].repeat((1, 16, 1)) 
         action, state = self.forward(
             obs_dict, goal_dict, rnn_init_state=rnn_state, return_state=True)
         
-        return action[:, 0], state
+        return action, state
 
     def _to_string(self):
         """Info to pretty print."""
         return "action_dim={}".format(self.ac_dim)
-
 
 
 class BC(PolicyAlgo):
@@ -411,6 +422,7 @@ class BC_RNN(BC):
 
         self._rnn_hidden_state = None
         self._rnn_horizon = self.algo_config.rnn.horizon
+        print("Using RNN Horizon: ", self._rnn_horizon)
         self._rnn_counter = 0
         self._rnn_is_open_loop = self.algo_config.rnn.get("open_loop", False)
 
