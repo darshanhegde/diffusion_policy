@@ -140,7 +140,7 @@ class RNNActorNetwork(RNN_MIMO_MLP):
 
         self.pred_steps = 16
         self.qp_layer_1 = QPLayer(self.ac_dim)
-        self.qp_layer_2 = QPLayer(self.ac_dim)
+        # self.qp_layer_2 = QPLayer(self.ac_dim)
 
     def _get_output_shapes(self):
         """
@@ -194,7 +194,7 @@ class RNNActorNetwork(RNN_MIMO_MLP):
 
         # Add differentiable trajectory optimization layer
         actions = self.qp_layer_1(actions)
-        actions = self.qp_layer_2(actions)
+        # actions = self.qp_layer_2(actions)
 
         if return_state:
             return actions, state

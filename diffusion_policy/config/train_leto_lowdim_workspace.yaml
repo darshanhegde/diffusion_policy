@@ -54,6 +54,7 @@ training:
   num_epochs: 5000
   # training loop control
   # in epochs
+  use_ema: True
   rollout_every: 50
   checkpoint_every: 50
   val_every: 100
