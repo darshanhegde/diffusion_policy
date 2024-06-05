@@ -34,7 +34,10 @@ class PushTEnv(gym.Env):
             block_cog=None, damping=None,
             render_action=True,
             render_size=96,
-            reset_to_state=None
+            reset_to_state=None, 
+            A = 1, 
+            b = 256,
+            shade_above = False,
         ):
         self._seed = None
         self.seed()
@@ -46,6 +49,10 @@ class PushTEnv(gym.Env):
         self.control_hz = self.metadata['video.frames_per_second']
         # legcay set_state for data compatibility
         self.legacy = legacy
+
+        self.A = A # slope of half plane
+        self.b = b # intercept of half plane
+        self.shade_above = shade_above # shading direction for half plane
 
         # agent_pos, block_pos, block_angle
         self.observation_space = spaces.Box(
@@ -193,6 +200,8 @@ class PushTEnv(gym.Env):
         self.screen = canvas
 
         draw_options = DrawOptions(canvas)
+
+        draw_options.draw_half_plane(self.A, self.b, pygame.Color('red'), shade_above=self.shade_above)
 
         # Draw goal pose.
         goal_body = self._get_goal_pose_body(self.goal_pose)

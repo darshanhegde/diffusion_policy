@@ -30,7 +30,9 @@ class QPLayer(nn.Module):
         self.L = Parameter(torch.tril(torch.rand(self.ac_dim, self.ac_dim)).to("cuda"))
         self.eps = 1e-4
 
-    def forward(self, actions):
+        self.steps = 0
+
+    def forward(self, actions, run_inference=False):
         batch_size, num_steps, _ = actions.shape
         output_dims = self.ac_dim * num_steps
         Q = torch.zeros((output_dims, output_dims)).to("cuda")
@@ -41,10 +43,17 @@ class QPLayer(nn.Module):
         G[:output_dims, :] = torch.eye(output_dims, dtype=torch.double, requires_grad=False).to("cuda")
         G[output_dims:, :] = -torch.eye(output_dims, dtype=torch.double, requires_grad=False).to("cuda")
         h = torch.ones(2 * output_dims, dtype=torch.double, requires_grad=False).to("cuda")
+        if run_inference:            
+            G_con = torch.ones((1, output_dims), dtype=torch.double, requires_grad=False).to("cuda")
+            G_con[0, 0] *= -1
+            h_con = torch.ones(1, dtype=torch.double, requires_grad=False).to("cuda")
+            G = torch.cat((G, G_con), dim=0)
+            h = torch.cat((h, h_con), dim=0) 
+
         e_eq = Variable(torch.Tensor()).to("cuda")
         x_prev = actions.reshape((batch_size, output_dims)).double()
         x = QPFunction(verbose=-1)(Q.double(), x_prev, G, h, e_eq, e_eq)
-        torch._assert(torch.all(G.mm(x.t()).t() <= h), "Constraint not satisfied")
+        torch._assert(torch.all(G.mm(x.t()).t() <= h + self.eps), "Constraint not satisfied")
 
         actions = x.view(batch_size, num_steps, self.ac_dim)
         actions = actions.float()
@@ -159,7 +168,7 @@ class RNNActorNetwork(RNN_MIMO_MLP):
                 msg="RNNActorNetwork: input_shape inconsistent in temporal dimension")
         return [T, self.ac_dim]
 
-    def forward(self, obs_dict, goal_dict=None, rnn_init_state=None, return_state=False):
+    def forward(self, obs_dict, goal_dict=None, rnn_init_state=None, return_state=False, run_inference=False):
         """
         Forward a sequence of inputs through the RNN and the per-step network.
 
@@ -193,7 +202,7 @@ class RNNActorNetwork(RNN_MIMO_MLP):
         actions = torch.tanh(actions["action"])
 
         # Add differentiable trajectory optimization layer
-        actions = self.qp_layer_1(actions)
+        actions = self.qp_layer_1(actions, run_inference)
         # actions = self.qp_layer_2(actions)
 
         if return_state:
@@ -218,7 +227,7 @@ class RNNActorNetwork(RNN_MIMO_MLP):
         # obs_dict = TensorUtils.to_sequence(obs_dict)
         # obs_dict["obs"] = obs_dict["obs"].repeat((1, 16, 1)) 
         action, state = self.forward(
-            obs_dict, goal_dict, rnn_init_state=rnn_state, return_state=True)
+            obs_dict, goal_dict, rnn_init_state=rnn_state, return_state=True, run_inference=True)
         
         return action, state
 
