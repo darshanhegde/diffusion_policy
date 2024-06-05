@@ -202,6 +202,7 @@ class PushTEnv(gym.Env):
         draw_options = DrawOptions(canvas)
 
         draw_options.draw_half_plane(self.A, self.b, pygame.Color('red'), shade_above=self.shade_above)
+        draw_options.draw_shaded_circle(384.0, 384.0, 32, pygame.Color('red'))
 
         # Draw goal pose.
         goal_body = self._get_goal_pose_body(self.goal_pose)

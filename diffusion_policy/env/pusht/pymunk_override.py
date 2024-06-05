@@ -126,6 +126,28 @@ class DrawOptions(pymunk.SpaceDebugDrawOptions):
         self.surface = surface
         super(DrawOptions, self).__init__()
 
+
+    def draw_shaded_circle(self, h: float, k: float, r: float, color: SpaceDebugColor) -> None:
+        """
+        Draw and shade a circle on a pygame surface given the center (h, k) and radius r.
+        
+        Parameters:
+            surface (pygame.Surface): The pygame surface to draw on.
+            h (float): The x-coordinate of the center of the circle.
+            k (float): The y-coordinate of the center of the circle.
+            r (float): The radius of the circle.
+            color (SpaceDebugColor): The color of the circle outline.
+            shade_color (SpaceDebugColor): The color for shading the circle.
+        """
+        # Convert center position to pygame coordinates
+        center = to_pygame((h, k), self.surface)
+        
+        # Draw the filled circle
+        pygame.draw.circle(self.surface, color, center, round(r), 0)
+        
+        # Draw the circle outline
+        pygame.draw.circle(self.surface, color, center, round(r), 1)
+
     def draw_circle(
         self,
         pos: Vec2d,

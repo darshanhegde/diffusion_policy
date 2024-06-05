@@ -64,14 +64,14 @@ class QPLayer(nn.Module):
             constraints = [G.cpu().numpy() @ x <= h.cpu().numpy()]
 
             radius = 0.125 # 32 
-            center_vector = np.array([0.5, 0.5])
             if run_inference: # add circular constraint if inference is true
-                # Introduce a large penalty for being inside the circle
-                def huber_penalty(expr, delta=1.0):
-                    return cp.sum(cp.huber(expr - radius, delta))
-                distance_to_center = cp.norm(x - center_vector, 2)
-                penalty = huber_penalty(distance_to_center)
-                objective = cp.Minimize(0.5 * cp.quad_form(x, Q.cpu().numpy()) + x_prev[i].cpu().numpy().T @ x + penalty)
+                t = cp.Variable()
+                center_vector = np.array([0.5, 0.5])
+                # constraints.append(cp.norm(x, 2) >= 0)
+                constraints.append(cp.norm(x - center_vector, 2) <= t)
+                constraints.append(t >= radius)
+                # constraints.append(cp.norm(center_vector - x, 2) <= radius)
+
 
             problem = cp.Problem(objective, constraints)
 
