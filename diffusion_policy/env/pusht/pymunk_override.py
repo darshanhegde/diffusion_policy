@@ -136,8 +136,8 @@ class DrawOptions(pymunk.SpaceDebugDrawOptions):
     ) -> None:
         p = to_pygame(pos, self.surface)
 
-        pygame.draw.circle(self.surface, fill_color.as_int(), p, round(radius), 0)
-        pygame.draw.circle(self.surface, light_color(fill_color).as_int(), p, round(radius-4), 0)
+        pygame.draw.circle(self.surface, tuple(fill_color), p, round(radius), 0)
+        pygame.draw.circle(self.surface, tuple(fill_color), p, round(radius-4), 0)
 
         circle_edge = pos + Vec2d(radius, 0).rotated(angle)
         p2 = to_pygame(circle_edge, self.surface)

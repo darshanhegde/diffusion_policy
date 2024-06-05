@@ -1,5 +1,6 @@
 from collections import OrderedDict
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -32,28 +33,38 @@ class QPLayer(nn.Module):
 
         self.steps = 0
 
-    def forward(self, actions, run_inference=False):
+    def forward(self, actions, obs_dict, run_inference=False):
         batch_size, num_steps, _ = actions.shape
         output_dims = self.ac_dim * num_steps
+        x_prev = actions.reshape((batch_size, output_dims)).double()
+        x = torch.zeros_like(x_prev)
+        batch_cur_pos = obs_dict['obs'][:, 0, 18:].double()
+
+        # solve QP for each batch element independently
         Q = torch.zeros((output_dims, output_dims)).to("cuda")
         for i in range(num_steps):
             Q[i*self.ac_dim:(i+1)*self.ac_dim, i*self.ac_dim:(i+1)*self.ac_dim] = self.L.mm(self.L.t()) + self.eps*(torch.eye(self.ac_dim, requires_grad = False)).to("cuda") 
 
-        G = torch.zeros(2 * output_dims, output_dims, dtype=torch.double, requires_grad=False).to("cuda")
-        G[:output_dims, :] = torch.eye(output_dims, dtype=torch.double, requires_grad=False).to("cuda")
-        G[output_dims:, :] = -torch.eye(output_dims, dtype=torch.double, requires_grad=False).to("cuda")
-        h = torch.ones(2 * output_dims, dtype=torch.double, requires_grad=False).to("cuda")
-        if run_inference:            
-            G_con = torch.ones((1, output_dims), dtype=torch.double, requires_grad=False).to("cuda")
-            G_con[0, 0] *= -1
-            h_con = torch.ones(1, dtype=torch.double, requires_grad=False).to("cuda")
-            G = torch.cat((G, G_con), dim=0)
-            h = torch.cat((h, h_con), dim=0) 
+        for i in range(batch_size):
+            G = torch.zeros(2 * output_dims, output_dims, dtype=torch.double, requires_grad=False).to("cuda")
+            G[:output_dims, :] = torch.eye(output_dims, dtype=torch.double, requires_grad=False).to("cuda")
+            G[output_dims:, :] = -torch.eye(output_dims, dtype=torch.double, requires_grad=False).to("cuda")
+            h = torch.ones(2 * output_dims, dtype=torch.double, requires_grad=False).to("cuda")
+            if run_inference:    
+                cur_pos = batch_cur_pos[i, :]
+                x_c = torch.from_numpy(np.array([-0.5, -0.5])).to("cuda")
+                c = 2 * (cur_pos - x_c)
+                d = (cur_pos - x_c).t().dot((cur_pos - x_c)) - 0.125       
+                G_con = torch.ones((1, output_dims), dtype=torch.double, requires_grad=False).to("cuda")
+                G_con[0, :] = -c 
+                h_con = torch.ones(1, dtype=torch.double, requires_grad=False).to("cuda")
+                h_con = G_con @ cur_pos + d
+                G = torch.cat((G, G_con), dim=0)
+                h = torch.cat((h, h_con), dim=0) 
 
-        e_eq = Variable(torch.Tensor()).to("cuda")
-        x_prev = actions.reshape((batch_size, output_dims)).double()
-        x = QPFunction(verbose=-1)(Q.double(), x_prev, G, h, e_eq, e_eq)
-        torch._assert(torch.all(G.mm(x.t()).t() <= h + self.eps), "Constraint not satisfied")
+            e_eq = Variable(torch.Tensor()).to("cuda")
+            x[i, :] = QPFunction(verbose=-1)(Q.double(), x_prev[i, :].double().unsqueeze(0), G, h, e_eq, e_eq)
+            torch._assert(torch.all(G @ x[i, :] <= h + self.eps), "Constraint not satisfied")
 
         actions = x.view(batch_size, num_steps, self.ac_dim)
         actions = actions.float()
@@ -202,7 +213,7 @@ class RNNActorNetwork(RNN_MIMO_MLP):
         actions = torch.tanh(actions["action"])
 
         # Add differentiable trajectory optimization layer
-        actions = self.qp_layer_1(actions, run_inference)
+        actions = self.qp_layer_1(actions, obs_dict, run_inference)
         # actions = self.qp_layer_2(actions)
 
         if return_state:
